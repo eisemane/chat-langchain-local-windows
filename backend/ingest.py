@@ -1,27 +1,28 @@
 """Load html from files, clean up, split, ingest into Weaviate."""
+
 import logging
 import os
 import re
-
-import weaviate
+from parser import langchain_docs_extractor  # type: ignore
 from bs4 import BeautifulSoup, SoupStrainer
+from constants import WEAVIATE_DOCS_INDEX_NAME
 from langchain.document_loaders import RecursiveUrlLoader, SitemapLoader
 from langchain.indexes import SQLRecordManager, index
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.utils.html import PREFIXES_TO_IGNORE_REGEX, SUFFIXES_TO_IGNORE_REGEX
-from langchain_community.vectorstores import Weaviate
+from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
-
-from backend.constants import WEAVIATE_DOCS_INDEX_NAME
-from backend.parser import langchain_docs_extractor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+from langchain_community.embeddings import OllamaEmbeddings
+
+
 def get_embeddings_model() -> Embeddings:
-    return OpenAIEmbeddings(model="text-embedding-3-small", chunk_size=200)
+    return OllamaEmbeddings(model="nomic-embed-text")
 
 
 def metadata_extractor(meta: dict, soup: BeautifulSoup) -> dict:
@@ -96,28 +97,25 @@ def load_api_docs():
 
 
 def ingest_docs():
-    WEAVIATE_URL = os.environ["WEAVIATE_URL"]
-    WEAVIATE_API_KEY = os.environ["WEAVIATE_API_KEY"]
-    RECORD_MANAGER_DB_URL = os.environ["RECORD_MANAGER_DB_URL"]
+    DATABASE_HOST = "127.0.0.1"
+    DATABASE_PORT = "5432"
+    DATABASE_USERNAME = "postgres"
+    DATABASE_PASSWORD = "yourpassword"
+    DATABASE_NAME = "your-db-name"  # Replace this with your database name.
+
+    RECORD_MANAGER_DB_URL = f"postgresql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}"
+    COLLECTION_NAME = "collection"  # Change this to your collection name
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=200)
     embedding = get_embeddings_model()
 
-    client = weaviate.Client(
-        url=WEAVIATE_URL,
-        auth_client_secret=weaviate.AuthApiKey(api_key=WEAVIATE_API_KEY),
-    )
-    vectorstore = Weaviate(
-        client=client,
-        index_name=WEAVIATE_DOCS_INDEX_NAME,
-        text_key="text",
-        embedding=embedding,
-        by_text=False,
-        attributes=["source", "title"],
+    vectorstore = Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=embedding,
     )
 
     record_manager = SQLRecordManager(
-        f"weaviate/{WEAVIATE_DOCS_INDEX_NAME}", db_url=RECORD_MANAGER_DB_URL
+        f"chromadb/{COLLECTION_NAME}", db_url=RECORD_MANAGER_DB_URL
     )
     record_manager.create_schema()
 
@@ -149,12 +147,6 @@ def ingest_docs():
         cleanup="full",
         source_id_key="source",
         force_update=(os.environ.get("FORCE_UPDATE") or "false").lower() == "true",
-    )
-
-    logger.info(f"Indexing stats: {indexing_stats}")
-    num_vecs = client.query.aggregate(WEAVIATE_DOCS_INDEX_NAME).with_meta_count().do()
-    logger.info(
-        f"LangChain now has this many vectors: {num_vecs}",
     )
 
 
