@@ -6,13 +6,17 @@ import re
 from parser import langchain_docs_extractor  # type: ignore
 from bs4 import BeautifulSoup, SoupStrainer
 from constants import WEAVIATE_DOCS_INDEX_NAME
-from langchain.document_loaders import RecursiveUrlLoader, SitemapLoader
 from langchain.indexes import SQLRecordManager, index
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.utils.html import PREFIXES_TO_IGNORE_REGEX, SUFFIXES_TO_IGNORE_REGEX
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
+from langchain_community.document_loaders import RecursiveUrlLoader, SitemapLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+import requests
+from requests.exceptions import ConnectionError, Timeout, RequestException
+import traceback
+from aiohttp.client_exceptions import ServerDisconnectedError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,8 +44,8 @@ def metadata_extractor(meta: dict, soup: BeautifulSoup) -> dict:
 
 def load_langchain_docs():
     return SitemapLoader(
-        "https://python.langchain.com/sitemap.xml",
-        filter_urls=["https://python.langchain.com/"],
+        "https://api.python.langchain.com/sitemap.xml",
+        filter_urls=["https://api.python.langchain.com/en/latest/"],
         parsing_function=langchain_docs_extractor,
         default_parser="lxml",
         bs_kwargs={
@@ -50,6 +54,7 @@ def load_langchain_docs():
             ),
         },
         meta_function=metadata_extractor,
+        verify_ssl=False,  # Add this line to turn off SSL verification
     ).load()
 
 
@@ -76,7 +81,7 @@ def simple_extractor(html: str) -> str:
 
 
 def load_api_docs():
-    return RecursiveUrlLoader(
+    RecursiveUrl = RecursiveUrlLoader(
         url="https://api.python.langchain.com/en/latest/",
         max_depth=8,
         extractor=simple_extractor,
@@ -93,14 +98,15 @@ def load_api_docs():
             "https://api.python.langchain.com/en/latest/_sources",
             "https://api.python.langchain.com/en/latest/_modules",
         ),
-    ).load()
+    ) #.with_config(run_name="Loading Pages")
+    return RecursiveUrl.load()
 
 
 def ingest_docs():
     DATABASE_HOST = "127.0.0.1"
     DATABASE_PORT = "5432"
     DATABASE_USERNAME = "postgres"
-    DATABASE_PASSWORD = "yourpassword"
+    DATABASE_PASSWORD = "mysecretpassword"
     DATABASE_NAME = "your-db-name"  # Replace this with your database name.
 
     RECORD_MANAGER_DB_URL = f"postgresql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}"
