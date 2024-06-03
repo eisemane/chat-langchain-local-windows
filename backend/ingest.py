@@ -16,6 +16,10 @@ from langchain_openai import OpenAIEmbeddings
 from backend.constants import WEAVIATE_DOCS_INDEX_NAME
 from backend.parser import langchain_docs_extractor
 
+from dotenv import load_dotenv
+
+load_dotenv(".env")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -39,8 +43,8 @@ def metadata_extractor(meta: dict, soup: BeautifulSoup) -> dict:
 
 def load_langchain_docs():
     return SitemapLoader(
-        "https://python.langchain.com/sitemap.xml",
-        filter_urls=["https://python.langchain.com/"],
+        "https://python.langchain.com/v0.2/sitemap.xml",
+        filter_urls=["https://python.langchain.com/v0.2"],
         parsing_function=langchain_docs_extractor,
         default_parser="lxml",
         bs_kwargs={
